@@ -1,0 +1,84 @@
+# ContenuLocal — environnement de dev local
+# Lancer : docker compose up
+# Tout tourne dans des conteneurs : base, file, API, worker.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: cl_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5432:5432"            # exposé pour s'y connecter depuis ta machine
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: cl_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  api:
+    build: ./api
+    container_name: cl_api
+    restart: unless-stopped
+    command: npm run dev          # serveur Express + rechargement à chaud
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDIS_URL: redis://redis:6379
+      PORT: 3000
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./api:/app              # code monté en direct -> modif sans rebuild
+      - /app/node_modules       # garde les node_modules du conteneur
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    build: ./api                 # même image que l'API, commande différente
+    container_name: cl_worker
+    restart: unless-stopped
+    command: npm run worker
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDIS_URL: redis://redis:6379
+    volumes:
+      - ./api:/app
+      - /app/node_modules
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+  # GUI web pour voir la base (http://localhost:8080)
+  adminer:
+    image: adminer:latest
+    container_name: cl_adminer
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+
+volumes:
+  pgdata:

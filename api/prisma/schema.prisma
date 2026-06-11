@@ -1,0 +1,62 @@
+// Schéma de la base. `npm run db:push` le synchronise avec PostgreSQL.
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String   // hash argon2/bcrypt — JAMAIS en clair
+  createdAt DateTime @default(now())
+  brands    Brand[]
+}
+
+model Brand {
+  id        String          @id @default(cuid())
+  name      String
+  sector    String?         // resto, salle de sport, coiffeur...
+  tone      String?         // chaleureux, fun, haut de gamme
+  colors    Json?           // couleurs de la marque
+  logoUrl   String?
+  owner     User            @relation(fields: [ownerId], references: [id])
+  ownerId   String
+  accounts  SocialAccount[]
+  posts     Post[]
+  createdAt DateTime        @default(now())
+}
+
+model SocialAccount {
+  id           String   @id @default(cuid())
+  platform     String   // "instagram", "tiktok"
+  accountName  String
+  tokenCipher  String   // token OAuth CHIFFRÉ (jamais en clair)
+  expiresAt    DateTime?
+  brand        Brand    @relation(fields: [brandId], references: [id])
+  brandId      String
+}
+
+model Post {
+  id          String     @id @default(cuid())
+  caption     String?
+  mediaUrl    String?    // URL du visuel dans l'object storage
+  platform    String
+  status      PostStatus @default(PENDING)
+  scheduledAt DateTime?
+  publishedAt DateTime?
+  brand       Brand      @relation(fields: [brandId], references: [id])
+  brandId     String
+  createdAt   DateTime   @default(now())
+}
+
+enum PostStatus {
+  PENDING     // généré, en attente de validation
+  APPROVED    // validé par le client
+  PUBLISHED   // publié sur le réseau
+  FAILED      // échec de publication
+}
